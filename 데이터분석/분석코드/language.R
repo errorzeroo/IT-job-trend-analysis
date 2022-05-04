@@ -27,12 +27,15 @@ lan$`2020`<-round(lan$`2020`, 1)
 library(reshape2)
 
 lan_melt<-melt(lan)
+names(lan_melt) <- c("language", "year", "value") 
 View(lan_melt)
 
+
 # 시각화
-ggplot(data = lan_melt, aes(x=lan_melt$language, y=lan_melt$value, group = lan_melt$variable))+
-  geom_line(color=lan_melt$variable)+
-  geom_point(color=lan_melt$variable, size=2)+
+ggplot(data = lan_melt, aes(x=lan_melt$language, y=lan_melt$value, group = lan_melt$year,
+                            fill=year))+
+  geom_line(aes(color=year))+
+  geom_point(aes(color=year), size=2)+
   xlab("개발언어")+
   ylab("연도")+
   ggtitle("개발언어별 SW 전문인력")
