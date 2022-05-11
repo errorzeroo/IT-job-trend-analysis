@@ -1,0 +1,380 @@
+---
+title: "mini"
+output: word_document
+---
+
+```{r setup, include=F}
+knitr::opts_chunk$set(error = T)
+knitr::opts_chunk$set(echo = F)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(stringr)
+library(knitr)
+library(KoNLP)
+library(remotes)
+library(multilinguer)
+library(scales)
+library(RColorBrewer)
+
+require(devtools)
+install_github("lchiffon/wordcloud2")
+library(wordcloud2)
+```
+
+## 크롤링 데이터 전처리
+
+
+다음과 같은 원데이터에서
+```{r pre,echo=F}
+data<-read_xlsx("C:/R/final_final2.xlsx")
+ex<-read_xlsx("C:/R/expre.xlsx",sheet=1)
+ex<-ex[,c(2:3,7)]
+head(ex)
+```
+
+
+CSS 태그가 함께 붙은 크롤링 데이터를 정제함.
+
+
+```{r pre2,echo=F}
+fn_str<-function(stt,end,data){
+  data<-gsub("\\[","",data)
+  data<-gsub("\\]","",data)
+  loc1<-str_locate_all(data,end)
+  loc1<-as.data.frame(loc1)
+  loc1.<-as.integer(loc1[seq(1,length(loc1),2)])
+  
+  
+  loc2<-str_locate_all(data,stt)
+  loc2<-as.data.frame(loc2)
+  loc2.<-as.integer(loc2[seq(2,length(loc2),2)])
+  
+  data1<-substr(data,loc2.+1,loc1.-1)
+  return(data1)
+}
+ex$coname<-fn_str('">','</a>',ex$coname)
+ex$title<-fn_str('<h1>','</h1>',ex$title)
+ex$career<-fn_str('<dd>','</dd>',ex$career)
+head(ex)
+
+```
+
+\n
+파싱이 완료된 데이터를 통합한 후, 변수 전처리를 시행함.
+
+
+
+
+
+(원데이터)
+
+
+
+```{r pre4, echo=F}
+ex<-read_xlsx("C:/R/expre.xlsx",sheet=2)
+
+head(ex[,c(1,3,4,5,6)])
+locc<-ex$loc
+locc<-gsub("[\n|\t|\t]","",locc)
+locc<-gsub("서울시","서울특별시",locc)
+locc<-gsub("서울 ","서울특별시 ",locc)
+locc<-gsub("경기 ","경기도 ",locc)
+locc<-gsub("\\d+","",locc)
+
+t.loc<-NULL
+for (i in 1:nrow(ex)){
+  x<-str_split(locc," ")[[i]]
+  t.loc<-c(t.loc,ifelse(length(x)<2,x,paste(x[1],x[2])))
+}
+```
+
+
+회사 위치 컬럼을 시/구 단위로 나눈 후, 서울을 서울특별시로 정규화하였음.
+ 
+ 
+```{r pre3, echo=F}
+
+ex$loc<-t.loc
+ex[,c(1,7)]
+
+```
+
+경력 컬럼을 정제 후, 경력 무관은 0으로, 신입은 1로, 경력직은 2로 할당하여 새롭게 저장해 줌.
+
+```{r pre5, echo=F}
+career<-ex$career
+career<-gsub("신입·","0-",career)
+career<-gsub("신입","0",career)
+career<-gsub("경력","",career)
+career<-gsub("관계없음","무관",career)
+# career<-gsub("무관","999",career)
+career<-gsub("년","",career)
+career<-gsub("[↑.]","-",career)
+career<-gsub("[\n|\r|\t]","",career)
+career<-gsub(" ","",career)
+aa<-which(str_detect(career,".-.-"))
+career[aa]<-str_replace(career[aa],"-",",")
+ex$career<-career
+ex$career2<-ifelse(str_sub(ex$career,1,1)==0,1,
+              ifelse(ex$career=="무관",0,2))
+ex[,c(1,6,10)]
+
+
+```
+
+
+자격요건/우대조건 컬럼을 정제해줌.
+
+
+```{r pre6}
+head(ex[,4])
+```
+
+
+먼저 소문자로 변환 후, 제어 문자를 삭제함.  
+마크업 언어를 제거해주고, 특수문자 및 숫자를 삭제함.  
+그리고 딥러닝/dl 과 같이 뜻이 동일한 단어들을 영어로 변환해 통일함.
+
+
+
+```{r pre7}
+qualif<-ex$qualif
+qualif<-tolower(qualif)
+qualif<-gsub('\\/',"  ",qualif)
+qualif<-gsub("[\n|\r|\t]"," ",qualif)
+qualif<-gsub("&...;","&",qualif)
+qualif<-gsub("&..;","",qualif)
+qualif<-gsub("\\d","",qualif)
+qualif<-gsub('["=→▶·~%^$*><@!?&]',"",qualif)
+qualif<-gsub('\\(',", ",qualif)
+qualif<-gsub('\\)'," ",qualif)
+qualif<-gsub("머신러닝","ml",qualif)
+qualif<-gsub("딥러닝","dl",qualif)
+qualif<-gsub("파이프라인","pipeline",qualif)
+qualif<-gsub("데이터","data",qualif)
+qualif<-gsub("컴퓨터 공학","컴퓨터공학",qualif)
+qualif<-gsub("restful api","restful-api",qualif)
+qualif<-gsub("앱","app",qualif)
+qualif<-gsub("웹","web",qualif)
+qualif<-gsub("데이터","data",qualif)
+qualif<-gsub("시스템","system",qualif)
+ex$qualif<-qualif
+head(ex[,4])
+```
+
+
+정제된 자격요건/우대조건 컬럼을 토큰화 해줌.
+```{r pre8}
+txt<-readLines("C:/R/R/stack.txt",encoding="UTF-8")
+buildDictionary(ext_dic = c("sejong","NIA"),
+                user_dic = data.frame(txt,"ncn"))
+
+qualif1<-sapply(qualif,extractNoun,USE.NAMES = F)
+for (i in 1:length(qualif1)){
+  qualif1[i]<-paste(unique(unlist(qualif1[i])),collapse=", ")
+}
+ex$qualif2<-unlist(qualif1)
+ex[,"qualif2"]
+
+```
+
+토큰화된 단어 중 핵심어들을 keyword2에 저장함.
+
+```{r pre9}
+ex$keyword[is.na(ex$keyword)]<-gsub("[가-힣]","",ex$qualif2)
+ex$keyword2<-gsub("[가-힣]","",tolower(ex$keyword))
+ex$keyword2<-gsub(", , ",", ",ex$keyword2)
+ex$keyword2<-gsub(", , ",", ",ex$keyword2)
+ex$keyword2<-gsub(", , ",", ",ex$keyword2)
+ex$keyword2<-gsub(", , ",", ",ex$keyword2)
+ex$keyword2<-gsub(",, ",", ",ex$keyword2)
+ex$keyword2<-ifelse(str_sub(ex$keyword2,1,1)==",",str_remove(ex$keyword2,", "),ex$keyword2)
+
+ex[,"keyword2"]
+
+```
+
+
+## 키워드 시각화
+토큰화한 키워드를 이용하여 어떤 키워드가 어떤 직군의 문서에서 자주 나왔는지를 언어 및 직무 스택을 중심으로 살펴봄. Count 함수를 이용하여 단어의 등장 빈도를 세주었고, 이를 막대 그래프를 이용해 시각화하였음.
+
+
+```{r allfreq}
+data<-read_xlsx("C:/R/final_final3.xlsx")
+total<-data
+
+key_app <- total %>% filter(job=='앱')
+key_app <- key_app$keyword2
+key_sys <- total %>% filter(job=='DBA+시스템')
+key_sys <- key_sys$keyword2
+key_web <- total %>% filter(job=='웹프로그래머')
+key_web <- key_web$keyword2
+key_ai <- total %>% filter(job=='빅데이터·AI(인공지능)')
+key_ai <- key_ai$keyword2
+key_total<- total$keyword2
+
+
+pre<-function(key_total){
+  
+  key_total<-strsplit(key_total,split=',')
+  key_total<-unlist(key_total)
+  key_total<-tolower(key_total)
+  key_total<- str_replace_all(key_total, ' ','')
+  
+  key_total<- gsub('자바', 'java', key_total)
+  key_total<- gsub('java스크립트', 'javascript', key_total)
+  key_total<- gsub('database','데이터베이스',key_total)
+  key_total<- gsub('리액트','react',key_total)
+  key_total<- gsub('스프링부트','springboot',key_total)
+  key_total<- gsub('오라클','oracle',key_total)
+  key_total<- gsub('mssql','ms-sql',key_total)
+  key_total<- gsub('유닉스','unix',key_total)
+  
+  key_total<- gsub('리눅스', 'linux', key_total)
+  key_total<- gsub('html5','html',key_total)
+  key_total<- gsub('html코딩','html',key_total)
+  key_total<- gsub('css3','css',key_total)
+  key_total<- gsub('빅데이터','bigdata',key_total)
+  key_total<- gsub('인공지능.ai.','ai',key_total)
+  key_total<- gsub('ai.ai.','ai',key_total)
+  key_total<- gsub('인공지능', 'ai', key_total)
+  key_total<- gsub('파이썬', 'python', key_total)
+  key_total<- gsub('deeplearning', '딥러닝', key_total)
+  key_total<- gsub('deep-learning', '딥러닝', key_total)
+  key_total<- gsub('머신러닝.ml.', '머신러닝', key_total)
+  key_total<- gsub('machinelearning','머신러닝', key_total)
+  key_total<- gsub('machine-learning','머신러닝', key_total)
+  key_total<- gsub('ui·ux디자인','ui·ux', key_total)
+  key_total<- gsub('bigdata','빅데이터', key_total)
+  key_total<- gsub('ui·ux디자인','ui·ux', key_total)
+  key_total<- gsub('sm','시스템매니지먼트', key_total)
+  key_total<- gsub('ai','인공지능', key_total)
+  key_total<- gsub('포토샵','photoshop', key_total)
+  key_total<- gsub('pm','프로젝트매니지먼트', key_total)
+  key_total<- gsub('ui·ux디자인','ui·ux', key_total)
+  key_total<- gsub('2d','', key_total)
+  key_total<- gsub('3d','', key_total)
+  
+  
+  #이건 한글 없앨 때만
+  key_total<- gsub('[가-힣]','',key_total)
+  key_total<- gsub('\\·','',key_total)
+  
+  key_total<- na.omit(key_total)
+  
+  return(key_total)
+}
+key_app <- pre(key_app)
+key_sys <- pre(key_sys)
+key_web <- pre(key_web)
+key_ai <- pre(key_ai)
+key_total <- pre(key_total)
+
+write(key_app,'key_app.txt')
+key_app <- read.table("key_app.txt")
+
+write(key_sys,'key_sys.txt')
+key_sys <- read.table('key_sys.txt')
+
+write(key_web,'key_web.txt')
+key_web <- read.table('key_web.txt')
+
+write(key_ai,'key_ai.txt')
+key_ai <- read.table('key_ai.txt')
+
+write(key_total,'key_total.txt')
+key_total <- read.table('key_total.txt')
+
+key_total_100 <- count(key_total,V1) %>% arrange(desc(n)) %>% head(100)
+key_app_10 <- count(key_app,V1) %>% arrange(desc(n)) %>% head(10)
+key_sys_10 <- count(key_sys,V1) %>% arrange(desc(n)) %>% head(10)
+key_web_10 <- count(key_web,V1) %>% arrange(desc(n)) %>% head(10)
+key_ai_10 <- count(key_ai,V1) %>% arrange(desc(n)) %>% head(10)
+
+
+key_total_20 <- count(key_total,V1) %>% arrange(desc(n)) %>% head(20)
+chart<-arrange(key_total_20,n)$V1
+ggplot(data=key_total_20, aes(x=V1, y=n, fill=n)) +
+  ggtitle('keyword Frequency Top20') +
+  labs(x="Frequency", y="Keyword") +
+  ylim(0,11000) +
+  geom_col() +
+  coord_flip() +
+  scale_x_discrete(limit=chart) +
+  geom_text(aes(label=n), hjust=-0.3)+
+  scale_fill_viridis_c(option = "cividis",begin = 0.3, end=0.6, direction = -1)
+```
+
+전체 키워드 시각화 결과에서는 web과 java가 약 9000번으로 다른 키워드에 비해 월등히 자주 등장한 것으로 나타남. 이는 웹프로그래머 공고가 다른 직군에 비해 많기 때문으로 웹프로그래머와 관련이 있는 HTML, JSP, JavaScript, PHP 등에 대한 키워드 역시 자주 나타남. 이어서 Python, MySQL, SQL, Oracle, 머신러닝 등 데이터 분석 및 데이터베이스에 대한 키워드가 자주 나타났고, C, App, Android가 이어서 자주 등장하였음.
+
+
+```{r appfreq}
+chart <- arrange(key_app_10, n)$V1
+ggplot(data=key_app_10, aes(x=V1, y=n, fill=n)) +
+  ggtitle('APP keyword Frequency Top10') +
+  labs(x="Frequency", y="Keyword") +
+  ylim(0,800) +
+  geom_col() +
+  coord_flip() +
+  scale_x_discrete(limit=chart) +
+  geom_text(aes(label=n), hjust=-0.3)+
+  scale_fill_viridis_c(option = "cividis",begin = 0.3, end=0.6, direction = -1)
+```
+
+어플리케이션 개발 직군에서는 Android, Kotlin 등 안드로이드 개발 관련 키워드가 가장 많이 나타났고, 이어서 Java, C 등 개발 언어가 뒤를 이었음. Ios, Swift 등 Ios 어플리케이션 개발에 대한 키워드는 각각 6번째와, 9번째로 자주 등장한 것으로 나타남. 한국 어플리케이션 개발은 안드로이드 개발 직군에 대한 수요가 더 많은 것으로 나타남.
+
+```{r sysfreq}
+
+chart <- arrange(key_sys_10, n)$V1
+ggplot(data=key_sys_10, aes(x=V1, y=n, fill=n)) +
+  ggtitle('SYS keyword Frequency Top10') +
+  labs(x="Frequency", y="Keyword") +
+  ylim(0,600) +
+  geom_col() +
+  coord_flip() +
+  scale_x_discrete(limit=chart) +
+  geom_text(aes(label=n), hjust=-0.3)+
+  scale_fill_viridis_c(option = "cividis",begin = 0.3, end=0.6, direction = -1)
+```
+
+시스템, DBA 관련 직군에서는 임베디드 키워드가 가장 자주 나타났고, 그 뒤로 C, C++, Java 등 개발 언어에 대한 키워드가 자주 나타났음. Linux가 다른 직군에 비해 높은 순위를 차지한 것을 보아 Linux 개발 환경을 많이 사용하는 것으로 추측해볼 수 있음. 이어서 PLC, HMI 등 직무 관련 키워드가 많이 등장하였음.
+
+
+```{r webfreq}
+chart <- arrange(key_web_10, n)$V1
+ggplot(data=key_web_10, aes(x=V1, y=n, fill=n)) +
+  ggtitle('WEB keyword Frequency Top10') +
+  labs(x="Frequency", y="Keyword") +
+  ylim(0,9500) +
+  geom_col() +
+  coord_flip() +
+  scale_x_discrete(limit=chart) +
+  geom_text(aes(label=n), hjust=-0.3)+
+  scale_fill_viridis_c(option = "cividis",begin = 0.3, end=0.6, direction = -1)
+```
+
+웹 개발 직군에서는 Java가 가장 자주 등장하였고, JSP, JavaScript 등 관련 키워드 역시 자주 등장함. Web, HTML, PHP 등 웹 개발 키워드 역시 자주 등장하였음. 이밖에 MySQL, SI, SQL 등 백엔드 개발 관련 키워드가 각각 6번째, 7번째 8번째를 차지하였음.
+
+```{r aifreq}
+
+chart <- arrange(key_ai_10, n)$V1
+ggplot(data=key_ai_10, aes(x=V1, y=n, fill=n)) +
+  ggtitle('AI keyword Frequency Top10') +
+  labs(x="Frequency", y="Keyword") +
+  ylim(0,2300) +
+  geom_col() +
+  coord_flip() +
+  scale_x_discrete(limit=chart) +
+  geom_text(aes(label=n), hjust=-0.3)+
+  scale_fill_viridis_c(option = "cividis",begin = 0.3, end=0.6, direction = -1)
+
+
+```
+
+AI 및 데이터 관련 직군에서는 Python이 가장 자주 나타났고, 머신러닝과 딥러닝 키워드가 상당히 자주 나타난 것으로 보아 기계학습 관련 직무에 수요가 큰 것으로 보임. 이어서 Java 및 C언어가 자주 나타났고, SQL, Hadoop 등 데이터베이스 관련 키워드도 자주 나왔음.
+
+
+
+
+
