@@ -1,0 +1,255 @@
+---
+title: "sur_report"
+author: "lim"
+date: '2022 5 11 '
+output: word_document
+---
+
+```{r data, include=FALSE}
+library(readxl)
+library(ggplot2)
+library(stringr)
+
+## 데이터 불러오기 ##
+setwd("C:/Bdata/mini")
+survey <- read_excel("./survey.xlsx")
+survey2 <- read_excel("./Rows (1) (1).xlsx")
+
+# 컬럼명 변경
+names(survey)<- c("sex", "age", "education", "job_state", "task_1", "task_2", "std_lan", "std_fw", "salary",
+                 "company", "emp_type", "workplace", "ITcamp", "ITcamp_emp", "ITporpolio", "codingtest",
+                 "certificate_q", "certificate", "language", "interview", "site")
+names(survey2) <- c(letters[1:26])
+```
+
+구직자 설문조사 했고, 현직자 중 설문조사가 완료된 파일을 받아서 엑셀 파일에서 1차 정제 후 R로 불러와서 분석하였다.
+
+```{r site}
+## 1. IT 재직자와 싸이트운영의 상관관계
+site <- data.frame(survey$job_state, survey$site)
+View(site)
+
+# 데이터 정제
+names(site) <- c("work", "y/n")
+site$`y/n`<-ifelse(site$`y/n` == "없음", "없음", "있음")
+site<-table(site)
+site<-data.frame(site)
+names(site) <- c("work", "y/n","Freq")
+site$ratio<-(site$Freq/sum(site$Freq))
+site$ratio<-round(site$ratio*100, digits = 1)
+
+# 시각화
+ggplot(site, aes(x=work, y=Freq, fill=`y/n`))+
+  geom_bar(stat='identity', position='dodge')+
+  xlab("사이트 운영 유무")+
+  ylab("count")+
+  ggtitle("사이트 운영 비율")+
+  geom_text(data=site, aes(label=paste(ratio,'%')), position=position_dodge(width=1), vjust=-0.5)
+
+```
+
+구직자 설문조사에서 사이트(notion, github, blog)를 운영하는 비율을 비교해 보았다.
+많은 비율의 구직자들이 싸이트를 운영하고 있었다.
+
+```{r certificate}
+## 2. 준비 자격증과 채용시 자격증
+# 준비 자격증
+cer_a <- data.frame(survey$certificate)
+
+# 데이터 정제
+cer_a <- strsplit(cer_a$survey.certificate, ", ")
+cer_a <- unlist(cer_a)
+cer_a <- sort(table(cer_a), decreasing = T)
+cer_a <- data.frame(cer_a)
+names(cer_a) <- c("자격증", "Freq")
+cer_a$ratio<-(cer_a$Freq/sum(cer_a$Freq))
+cer_a$ratio<-round(cer_a$ratio*100, digits = 1)
+
+# 채용시 자격증
+cer_b <- data.frame(survey2$s,survey2$v,survey2$w,survey2$x,survey2$y,survey2$t,survey2$u)
+
+# 데이터 정제
+cer_b <-table(str_replace_all(c(cer_b$survey2.s, cer_b$survey2.v, cer_b$survey2.w, cer_b$survey2.x,
+                                cer_b$survey2.y, cer_b$survey2.t, cer_b$survey2.u)," ",""))
+cer_b <-data.frame(cer_b)
+names(cer_b) <- c("자격증", "Freq")
+cer_b$ratio<-(cer_b$Freq/sum(cer_b$Freq))
+cer_b$ratio<-round(cer_b$ratio*100, digits = 1)
+
+# 시각화
+ggplot(cer_a, aes(x=`자격증`, y=Freq, fill=`자격증`)) +geom_bar(stat='identity')+
+  scale_x_discrete(limits=c("정보처리기사", "빅데이터분석기사","ADsP", "SQLD", "ADP", 
+                            "사회조사분석사 2급", "AWS", "감리사", "정보관기술사", "정보처리산업기사"))+
+  geom_text(data=cer_a, aes(x=`자격증`, y=Freq, label=paste(ratio,'%')), vjust=-0.5)+
+  scale_fill_manual(values = c("#1E1350","#85130C","#189B9B","#F7DA09","#6E6E6E",
+                               "#6E6E6E","#6E6E6E","#6E6E6E","#6E6E6E","#6E6E6E"))+
+  xlab("자격증")+
+  ylab("count")+
+  ggtitle("준비 또는 취득 자격증")
+
+ggplot(cer_b, aes(x=`자격증`,y=Freq, fill=`자격증`))+geom_bar(stat='identity')+
+  scale_x_discrete(limits=c("정보처리기사", "빅데이터분석기사","ADsP", "SQLD", "클라우드관련자격증", "OCP", "CCNA"))+
+  geom_text(data=cer_b, aes(x=`자격증`, y=Freq, label=paste(ratio,'%')), vjust=-0.5)+
+  scale_fill_manual(values = c("#1E1350","#6E6E6E","#6E6E6E","#F7DA09","#85130C",
+                               "#189B9B","#E8BCEA"))+
+  xlab("자격증")+
+  ylab("count")+
+  ggtitle("채용시 필요 자격증")
+
+```
+
+구직자 설문조사와 현직자 설문조사에서 자격증 비교 분석 해봤다.
+대체적으로 구직자가 준비하는 자격증과 현직자가 필요하다고 생각하는 자격증이 비슷했는데,
+ADsP와 SQLD가 구직자가 준비하는 것에 비해 현직자가 필요하다고 생각하는 비율이 낮았고,
+현직자가 필요하다고 생각하는 자격증에 클라우드 관련 자격증의 비율이 높았다.
+구직자 설문조사가 인공지능과 빅데이터 관련해서 준비하는 분들에 집중적으로 이루어져서 나온 결과라고 보여진다.
+
+```{r language}
+## 3-1. 준비 언어와 개발 언어
+# 준비 언어
+lan <- data.frame(survey$std_lan)
+
+# 데이터 정제
+lan <- strsplit(lan$survey.std_lan, ", ")
+lan <- unlist(lan)
+lan <- sort(table(lan), decreasing = T)
+lan <- data.frame(lan)
+lan$ratio<-(lan$Freq/sum(lan$Freq))
+lan$ratio<-round(lan$ratio*100, digits = 1)
+
+# 개발 언어
+lan2 <- data.frame(survey2$m, survey2$n, survey2$o)
+lan2 <-table(str_replace_all(c(lan2$survey2.m, lan2$survey2.n, lan2$survey2.o)," ",""))
+lan2 <- data.frame(lan2)
+names(lan2) <- c("lan", "Freq")
+lan2$ratio<-(lan2$Freq/sum(lan2$Freq))
+lan2$ratio<-round(lan2$ratio*100, digits = 0)
+
+# 시각화
+ggplot(lan, aes(x=lan, y=Freq, fill=lan))+geom_bar(stat='identity')+
+  scale_x_discrete(limits=c("Python", "Java","Javascript", "HTML/CSS", "SQL", "R", "C", "C++",
+                            "NOSQL", "C#", "Go", "Kotlin", "Rust", "Scala", "PHP", "ProgreSQL",
+                            "Swift", "Typescript"))+
+  geom_text(data=lan, aes(x=lan, y=Freq, label=paste(ratio,'%')), vjust=-0.5)+
+  scale_fill_manual(values = c("#900C3F","#bb6879","#ce8d99","#FF5733","#DAF7A6",
+                               "#6E6E6E","#DAF7A6","#6E6E6E","#6E6E6E","#6E6E6E","#6E6E6E",
+                               "#6E6E6E","#6E6E6E","#6E6E6E","#6E6E6E","#6E6E6E","#6E6E6E","#6E6E6E"))+
+  xlab("프로그래밍 언어")+
+  ylab("count")+
+  ggtitle("준비 언어")
+
+ggplot(lan2, aes(x=lan,y=Freq, fill=lan))+geom_bar(stat='identity')+
+  scale_x_discrete(limits=c("Python", "JAVA","Javascript,CSS,HTML"))+
+  geom_text(data=lan2, aes(x=lan, y=Freq, label=paste(ratio,'%')), vjust=-0.5)+
+  scale_fill_manual(values = c("#FF5733", "#DAF7A6","#900C3F"))+
+  xlab("개발 언어")+
+  ylab("count")+
+  ggtitle("채용시 필요 역량 언어")
+
+```
+
+구직자 설문조사와 현직자 설문조사에서 개발 언어를 비교 분석 해봤다.
+대체적으로 구직자가 준비하는 언어와 현직자가 필요하다고 생각하는 언어가 비슷했다.
+구직자가 준비하는 언어중에 SQL과 R이 많았는데 이것도
+구직자 설문조사가 인공지능과 빅데이터 관련해서 준비하는 분들에 집중적으로 이루어져서 나온 결과라고 보여진다.
+
+```{r task}
+## 3-2. 구직자 희망직무
+task <- data.frame(survey$task_1, survey$task_2)
+task_test <- data.frame(survey$task_2)
+
+# 데이터 정제
+task_test<- gsub('빅데이터 관련 또는 AI 전문가', '빅데이터 또는 AI 전문가', task_test$survey.task_2)
+task_test <-data.frame(task_test)
+task <- cbind(task$survey.task_1, task_test$task_test)
+task<- str_replace_all(task, ' ','')
+task <- data.frame(table(task))
+task$ratio<-(task$Freq/sum(task$Freq))
+task$ratio<-round(task$ratio*100, digits = 1)
+
+## 3-2. 현직자 채용 직무
+task2 <- data.frame(survey2$g, survey2$h, survey2$i, survey2$j, survey2$k, survey2$l)
+
+# 데이터 정제
+task2 <-table(str_replace_all(c(survey2$g, survey2$h, survey2$i, survey2$j, survey2$k, survey2$l)," ",""))
+task2 <-data.frame(task2)
+names(task2) <- c("task", "Freq")
+task2$ratio<-(task2$Freq/sum(task2$Freq))
+task2$ratio<-round(task2$ratio*100, digits = 1)
+
+# 시각화
+ggplot(task, aes(x=task, y=Freq, fill=task))+geom_bar(stat='identity')+
+  theme(axis.text.x=element_text(angle=50, hjust=1))+
+  scale_x_discrete(limits=c("빅데이터또는AI전문가", "웹백엔드개발자", "웹프론트엔드개발자","DBA", "모바일앱개발자", 
+                            "시스템프로그래머", "없음", "시스템엔지니어","시스템보안", "데이터분석가", "고민중",
+                            "테스트엔지니어", "모바일게임개발자", "네트워크엔지니어", "영상처리", "풀스택개발자",
+                            "임베디드", "컨설턴트","펌웨어엔지니어","퍼블릭클라우드환경에서데이터엔지니어",
+                            "온프레미스환경에서데이터엔지니어"))+
+  geom_text(data=task, aes(x=task, y=Freq, label=paste(ratio,'%')), vjust=-0.5)+
+  scale_fill_manual(values=c("#81c147", "#6E6E6E", "#97938d","#81c147", "#415c28", "#415c28",
+                             "#6a8518", "#2e453b", "#2e453b","#2e453b", "#6E6E6E", "#6E6E6E",
+                             "#b0b0b0", "#83dcb7", "#bfff00","#6E6E6E", "#6E6E6E", "#97938d",
+                             "#b0b0b0", "#97938d", "#6E6E6E"))+
+  xlab("직무")+
+  ylab("count")+
+  ggtitle("희망 직무")
+
+ggplot(task2,aes(x=task, y=Freq, fill=task))+geom_bar(stat='identity')+
+  scale_x_discrete(limits=c("빅데이터", "인공지능개발자","백엔드개발자", "프론트엔드개발자", "클라우드개발자",
+                            "클라우드엔지니어"))+
+  geom_text(data=task2, aes(x=task, y=Freq, label=paste(ratio,'%')), vjust=-0.5)+
+  scale_fill_manual(values=c("#83dcb7", "#6a8518", "#6a8518","#6E6E6E", "#6E6E6E", "#bfff00"))+
+  xlab("직무")+
+  ylab("count")+
+  ggtitle("채용 직무")
+
+```
+
+구직자 설문조사와 현직자 설문조사에서 희망 직무와 채용직무를 비교 분석 해봤다.
+대체적으로 구직자가 희망하는 직무와 현직자가  채용하는 직무가 비슷했다.
+
+```{r ITcamp}
+## 4. 설문 국비교육/부트캠프
+ITcamp <-data.frame(survey$ITcamp)
+
+# 데이터 정제
+ITcamp<-ifelse(ITcamp == "아니오 (14번 이동)", "아니요","예")
+ITcamp<-table(ITcamp)
+ITcamp<-data.frame(ITcamp)
+names(ITcamp) <- c("y/n", "Freq")
+ITcamp$ratio<-(ITcamp$Freq/sum(ITcamp$Freq))
+ITcamp$ratio<-round(ITcamp$ratio*100, digits = 1)
+
+## 4. 교육과정 참여
+ITcamp2 <- data.frame(survey2$d)
+
+# 데이터 정제
+ITcamp2 <-table(na.omit(survey2$d))
+ITcamp2 <-data.frame(ITcamp2)
+names(ITcamp2) <- c("y/n", "Freq")
+ITcamp2$ratio<-(ITcamp2$Freq/sum(ITcamp2$Freq))
+ITcamp2$ratio<-round(ITcamp2$ratio*100, digits = 1)
+
+
+# 시각화
+ggplot(ITcamp,aes(x="", y=Freq, fill=`y/n`))+ 
+  geom_bar(width = 10,stat = 'identity')+
+  geom_text(aes(label=paste(sort(ITcamp$ratio, decreasing = TRUE),'%')), vjust=-2)+
+  coord_polar("y")+
+  xlab("")+
+  ylab("")+
+  ggtitle("IT 교육과정 참여 여부")
+
+ggplot(ITcamp2,aes(x="",y=Freq, fill=`y/n`))+geom_bar(width = 10,stat = 'identity')+
+  geom_text(aes(x=`y/n`, y=Freq, label=paste(ratio,'%')), hjust=1)+
+  coord_polar("y")+
+  xlab("")+
+  ylab("")+
+  ggtitle("IT 교육과정 채용 여부")
+
+```
+
+구직자 설문조사와 현직자 설문조사에서 IT캠프 참여 여부와 채용여부를 비교 분석 해봤다.
+대체적으로 구직자는 IT캠프를 참여하고 있었고, 현직자는 IT캠프를 참여한 인재를 채용하려고 했다.
+
+![](01.png)
